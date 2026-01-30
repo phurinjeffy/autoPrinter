@@ -532,19 +532,50 @@ function generateLabel() {
                     return;
                 }
 
+                // Wait longer for dropdown animation to complete
+                await new Promise(r => setTimeout(r, 500));
                 await clickElement(retryResult.option);
                 console.log('[AutoPrinter] Clicked PDF option (after click trigger)');
+
+                // Wait to see if new tab opens
+                await new Promise(r => setTimeout(r, 1000));
                 resolve({ success: true });
                 return;
             }
 
             const pdfOption = optionResult.option;
 
-            // Wait a moment for dropdown to be fully ready
-            await new Promise(r => setTimeout(r, 200));
+            // Wait longer for dropdown to be fully ready and animation to complete
+            console.log('[AutoPrinter] Waiting for dropdown animation...');
+            await new Promise(r => setTimeout(r, 800));
 
-            await clickElement(pdfOption);
+            // Log the element we're about to click
+            console.log('[AutoPrinter] PDF option element:', pdfOption.outerHTML.substring(0, 200));
+
+            // Try clicking multiple times with delays
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                console.log('[AutoPrinter] Click attempt', attempt);
+                await clickElement(pdfOption);
+
+                // Wait and check if something happened (e.g., new tab opened or dropdown closed)
+                await new Promise(r => setTimeout(r, 500));
+
+                // Check if dropdown is still visible - if not, click probably worked
+                const stillVisible = document.querySelector('[data-testid="doc-type-NORMAL_PDF"]');
+                if (!stillVisible) {
+                    console.log('[AutoPrinter] Dropdown closed, click successful!');
+                    break;
+                }
+
+                if (attempt < 3) {
+                    console.log('[AutoPrinter] Dropdown still visible, retrying...');
+                }
+            }
+
             console.log('[AutoPrinter] Clicked PDF option');
+
+            // Wait a bit for new tab to open
+            await new Promise(r => setTimeout(r, 1000));
 
             resolve({ success: true });
 
