@@ -656,10 +656,6 @@ function generateLabel() {
         }
     });
 }
-resolve({ success: false, error: err.message });
-        }
-    });
-}
 
 // Wait for all order labels to finish loading
 function waitForLabelsToLoad(maxWaitMs = 120000) {
