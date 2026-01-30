@@ -514,6 +514,9 @@ function generateLabel() {
             console.log('[AutoPrinter] Waiting for all labels to load...');
             await waitForLabelsToLoad();
 
+            // Small delay after labels loaded
+            await new Promise(r => setTimeout(r, 500));
+
             // Wait for the generate button to be enabled
             const buttonResult = await waitForGenerateButtonEnabled();
 
@@ -526,19 +529,35 @@ function generateLabel() {
             console.log('[AutoPrinter] Found generate button, triggering hover...');
 
             // Try hover multiple times with delays
-            for (let i = 0; i < 3; i++) {
+            let pdfOption = null;
+            for (let i = 0; i < 5; i++) {
                 triggerHover(generateButton);
                 await new Promise(r => setTimeout(r, 300));
 
                 // Check if dropdown appeared
-                const pdfOption = document.querySelector('[data-testid="doc-type-NORMAL_PDF"]');
+                pdfOption = document.querySelector('[data-testid="doc-type-NORMAL_PDF"]');
                 if (pdfOption) {
                     console.log('[AutoPrinter] Dropdown appeared on attempt', i + 1);
                     break;
                 }
             }
 
-            // Wait for dropdown to appear and find PDF option
+            // If dropdown appeared via hover, click immediately (like before)
+            if (pdfOption) {
+                console.log('[AutoPrinter] Clicking PDF option immediately...');
+                pdfOption.click();
+
+                // Wait and check
+                await new Promise(r => setTimeout(r, 500));
+                const stillVisible = document.querySelector('[data-testid="doc-type-NORMAL_PDF"]');
+                if (!stillVisible) {
+                    console.log('[AutoPrinter] Click successful, dropdown closed');
+                    resolve({ success: true });
+                    return;
+                }
+            }
+
+            // Fallback: Wait for dropdown and try different click methods
             const optionResult = await waitForPdfOption();
 
             if (!optionResult.ready) {
@@ -553,74 +572,38 @@ function generateLabel() {
                     return;
                 }
 
-                // Wait longer for dropdown animation to complete
-                await new Promise(r => setTimeout(r, 500));
-                await clickElement(retryResult.option);
+                retryResult.option.click();
                 console.log('[AutoPrinter] Clicked PDF option (after click trigger)');
-
-                // Wait to see if new tab opens
-                await new Promise(r => setTimeout(r, 1000));
                 resolve({ success: true });
                 return;
             }
 
-            const pdfOption = optionResult.option;
+            // Try simple click first
+            console.log('[AutoPrinter] Trying simple click on PDF option...');
+            optionResult.option.click();
 
-            // Wait longer for dropdown to be fully ready and animation to complete
-            console.log('[AutoPrinter] Waiting for dropdown animation...');
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 500));
 
-            // Log the element we're about to click
-            console.log('[AutoPrinter] PDF option element:', pdfOption.outerHTML.substring(0, 200));
+            // Check if it worked
+            const closed = !document.querySelector('[data-testid="doc-type-NORMAL_PDF"]');
+            if (closed) {
+                console.log('[AutoPrinter] Simple click worked!');
+                resolve({ success: true });
+                return;
+            }
 
-            // Get coordinates for the click
-            const rect = pdfOption.getBoundingClientRect();
+            // If still visible, try other methods
+            console.log('[AutoPrinter] Simple click failed, trying other methods...');
+
+            const pdfEl = optionResult.option;
+            const rect = pdfEl.getBoundingClientRect();
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.top + rect.height / 2;
 
-            // Try clicking multiple times with different methods
-            for (let attempt = 1; attempt <= 3; attempt++) {
-                console.log('[AutoPrinter] Click attempt', attempt);
+            // Try coordinate-based click
+            await clickAtCoordinates(centerX, centerY);
 
-                if (attempt === 1) {
-                    // First try: standard click
-                    await clickElement(pdfOption);
-                } else if (attempt === 2) {
-                    // Second try: coordinate-based click
-                    await clickAtCoordinates(centerX, centerY);
-                } else {
-                    // Third try: focus then click
-                    pdfOption.focus();
-                    await new Promise(r => setTimeout(r, 100));
-                    pdfOption.click();
-                    await new Promise(r => setTimeout(r, 100));
-
-                    // Also try clicking any child elements
-                    const children = pdfOption.querySelectorAll('*');
-                    for (const child of children) {
-                        child.click();
-                    }
-                }
-
-                // Wait and check if something happened
-                await new Promise(r => setTimeout(r, 800));
-
-                // Check if dropdown is still visible - if not, click probably worked
-                const stillVisible = document.querySelector('[data-testid="doc-type-NORMAL_PDF"]');
-                if (!stillVisible) {
-                    console.log('[AutoPrinter] Dropdown closed, click successful!');
-                    break;
-                }
-
-                if (attempt < 3) {
-                    console.log('[AutoPrinter] Dropdown still visible, retrying with different method...');
-                }
-            }
-
-            console.log('[AutoPrinter] Finished click attempts on PDF option');
-
-            // Wait a bit for new tab to open
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 1000));
 
             resolve({ success: true });
 
