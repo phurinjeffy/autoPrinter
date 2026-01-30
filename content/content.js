@@ -388,57 +388,78 @@ async function clickElement(element) {
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
-    // Method 1: Direct click
+    console.log('[AutoPrinter] Clicking at coordinates:', centerX, centerY);
+
+    // Method 1: Direct native click
     element.click();
+    await new Promise(r => setTimeout(r, 100));
 
-    // Method 2: MouseEvent click with coordinates
-    element.dispatchEvent(new MouseEvent('click', {
+    // Method 2: Simulate full mouse interaction sequence
+    const mouseDownEvent = new MouseEvent('mousedown', {
         bubbles: true,
         cancelable: true,
         view: window,
+        button: 0,
+        buttons: 1,
         clientX: centerX,
         clientY: centerY
-    }));
+    });
+    element.dispatchEvent(mouseDownEvent);
 
-    // Method 3: Pointer events sequence (mousedown -> mouseup -> click)
-    element.dispatchEvent(new MouseEvent('mousedown', {
+    await new Promise(r => setTimeout(r, 100));
+
+    const mouseUpEvent = new MouseEvent('mouseup', {
         bubbles: true,
         cancelable: true,
         view: window,
+        button: 0,
+        buttons: 0,
         clientX: centerX,
         clientY: centerY
-    }));
+    });
+    element.dispatchEvent(mouseUpEvent);
 
     await new Promise(r => setTimeout(r, 50));
 
-    element.dispatchEvent(new MouseEvent('mouseup', {
+    const clickEvent = new MouseEvent('click', {
         bubbles: true,
         cancelable: true,
         view: window,
+        button: 0,
         clientX: centerX,
         clientY: centerY
-    }));
-
-    // Method 4: PointerEvent click
-    element.dispatchEvent(new PointerEvent('pointerdown', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        pointerType: 'mouse',
-        clientX: centerX,
-        clientY: centerY
-    }));
-
-    element.dispatchEvent(new PointerEvent('pointerup', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        pointerType: 'mouse',
-        clientX: centerX,
-        clientY: centerY
-    }));
+    });
+    element.dispatchEvent(clickEvent);
 
     console.log('[AutoPrinter] Click events dispatched on element');
+}
+
+// Alternative click using elementFromPoint
+async function clickAtCoordinates(x, y) {
+    const element = document.elementFromPoint(x, y);
+    if (!element) {
+        console.log('[AutoPrinter] No element at coordinates', x, y);
+        return false;
+    }
+
+    console.log('[AutoPrinter] Element at point:', element.tagName, element.textContent?.substring(0, 50));
+
+    // Simulate mouse events at the coordinates
+    const events = ['mousedown', 'mouseup', 'click'];
+    for (const eventType of events) {
+        const event = new MouseEvent(eventType, {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            button: 0,
+            clientX: x,
+            clientY: y
+        });
+        element.dispatchEvent(event);
+        await new Promise(r => setTimeout(r, 50));
+    }
+
+    return true;
 }
 
 // Trigger hover on an element using multiple methods
@@ -547,18 +568,42 @@ function generateLabel() {
 
             // Wait longer for dropdown to be fully ready and animation to complete
             console.log('[AutoPrinter] Waiting for dropdown animation...');
-            await new Promise(r => setTimeout(r, 800));
+            await new Promise(r => setTimeout(r, 1000));
 
             // Log the element we're about to click
             console.log('[AutoPrinter] PDF option element:', pdfOption.outerHTML.substring(0, 200));
 
-            // Try clicking multiple times with delays
+            // Get coordinates for the click
+            const rect = pdfOption.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+
+            // Try clicking multiple times with different methods
             for (let attempt = 1; attempt <= 3; attempt++) {
                 console.log('[AutoPrinter] Click attempt', attempt);
-                await clickElement(pdfOption);
 
-                // Wait and check if something happened (e.g., new tab opened or dropdown closed)
-                await new Promise(r => setTimeout(r, 500));
+                if (attempt === 1) {
+                    // First try: standard click
+                    await clickElement(pdfOption);
+                } else if (attempt === 2) {
+                    // Second try: coordinate-based click
+                    await clickAtCoordinates(centerX, centerY);
+                } else {
+                    // Third try: focus then click
+                    pdfOption.focus();
+                    await new Promise(r => setTimeout(r, 100));
+                    pdfOption.click();
+                    await new Promise(r => setTimeout(r, 100));
+
+                    // Also try clicking any child elements
+                    const children = pdfOption.querySelectorAll('*');
+                    for (const child of children) {
+                        child.click();
+                    }
+                }
+
+                // Wait and check if something happened
+                await new Promise(r => setTimeout(r, 800));
 
                 // Check if dropdown is still visible - if not, click probably worked
                 const stillVisible = document.querySelector('[data-testid="doc-type-NORMAL_PDF"]');
@@ -568,14 +613,14 @@ function generateLabel() {
                 }
 
                 if (attempt < 3) {
-                    console.log('[AutoPrinter] Dropdown still visible, retrying...');
+                    console.log('[AutoPrinter] Dropdown still visible, retrying with different method...');
                 }
             }
 
-            console.log('[AutoPrinter] Clicked PDF option');
+            console.log('[AutoPrinter] Finished click attempts on PDF option');
 
             // Wait a bit for new tab to open
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 1500));
 
             resolve({ success: true });
 
