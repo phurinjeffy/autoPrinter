@@ -44,11 +44,11 @@ function collapseGeneratePopup() {
         try {
             // Find the collapse button - it contains "ย่อ" text
             const collapseButton = document.querySelector('.collapse');
-            
+
             if (collapseButton) {
                 console.log('[AutoPrinter] Found collapse button, clicking...');
                 collapseButton.click();
-                
+
                 // Wait a moment for the popup to close
                 setTimeout(() => {
                     resolve({ success: true });
@@ -430,8 +430,9 @@ function triggerHover(element) {
 function generateLabel() {
     return new Promise(async (resolve) => {
         try {
-            // Wait a bit for the page to update after arrange pickup
-            await new Promise(r => setTimeout(r, 1500));
+            // Wait for all labels to load - check for loading indicators
+            console.log('[AutoPrinter] Waiting for all labels to load...');
+            await waitForLabelsToLoad();
 
             // Wait for the generate button to be enabled
             const buttonResult = await waitForGenerateButtonEnabled();
@@ -487,6 +488,75 @@ function generateLabel() {
         } catch (err) {
             resolve({ success: false, error: err.message });
         }
+    });
+}
+
+// Wait for all order labels to finish loading
+function waitForLabelsToLoad(maxWaitMs = 120000) {
+    return new Promise((resolve) => {
+        const startTime = Date.now();
+        const checkInterval = 1000; // Check every 1 second
+        let stableCount = 0;
+
+        console.log('[AutoPrinter] Starting to wait for all labels to load...');
+
+        const checkLoading = () => {
+            const elapsed = Date.now() - startTime;
+
+            // Find all status columns in the order table
+            const statusCols = document.querySelectorAll('.status-col');
+
+            let totalOrders = statusCols.length;
+            let successCount = 0;
+            let loadingCount = 0;
+
+            statusCols.forEach(col => {
+                // Check for success status - has "สำเร็จ" text or success class/data-testid
+                const hasSuccess = col.querySelector('[data-testid$="-success"]') ||
+                    col.querySelector('.icon.success') ||
+                    col.innerText.includes('สำเร็จ');
+
+                if (hasSuccess) {
+                    successCount++;
+                } else {
+                    loadingCount++;
+                }
+            });
+
+            console.log(`[AutoPrinter] Label status: ${successCount}/${totalOrders} loaded (${loadingCount} still loading, ${elapsed}ms elapsed)`);
+
+            // All orders have success status
+            if (totalOrders > 0 && successCount === totalOrders) {
+                stableCount++;
+                // Wait for 2 stable checks to be sure
+                if (stableCount >= 2) {
+                    console.log('[AutoPrinter] All labels loaded successfully!');
+                    resolve();
+                    return;
+                }
+            } else {
+                stableCount = 0;
+            }
+
+            // Timeout - max 2 minutes
+            if (elapsed >= maxWaitMs) {
+                console.log(`[AutoPrinter] Max wait time reached. ${successCount}/${totalOrders} loaded, proceeding anyway`);
+                resolve();
+                return;
+            }
+
+            // Minimum wait of 2 seconds regardless
+            if (elapsed < 2000) {
+                setTimeout(checkLoading, checkInterval);
+                return;
+            }
+
+            // Keep checking if not all loaded
+            setTimeout(checkLoading, checkInterval);
+        };
+
+        // Start checking after initial delay
+        setTimeout(checkLoading, 1000);
     });
 }
 
