@@ -382,6 +382,65 @@ function waitForPdfOption(maxAttempts = 15, interval = 300) {
     });
 }
 
+// Click an element using multiple methods to ensure it registers
+async function clickElement(element) {
+    const rect = element.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    // Method 1: Direct click
+    element.click();
+
+    // Method 2: MouseEvent click with coordinates
+    element.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: centerX,
+        clientY: centerY
+    }));
+
+    // Method 3: Pointer events sequence (mousedown -> mouseup -> click)
+    element.dispatchEvent(new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: centerX,
+        clientY: centerY
+    }));
+
+    await new Promise(r => setTimeout(r, 50));
+
+    element.dispatchEvent(new MouseEvent('mouseup', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: centerX,
+        clientY: centerY
+    }));
+
+    // Method 4: PointerEvent click
+    element.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        pointerType: 'mouse',
+        clientX: centerX,
+        clientY: centerY
+    }));
+
+    element.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        pointerType: 'mouse',
+        clientX: centerX,
+        clientY: centerY
+    }));
+
+    console.log('[AutoPrinter] Click events dispatched on element');
+}
+
 // Trigger hover on an element using multiple methods
 function triggerHover(element) {
     // Method 1: MouseEvent mouseenter/mouseover
@@ -473,14 +532,18 @@ function generateLabel() {
                     return;
                 }
 
-                retryResult.option.click();
+                await clickElement(retryResult.option);
                 console.log('[AutoPrinter] Clicked PDF option (after click trigger)');
                 resolve({ success: true });
                 return;
             }
 
             const pdfOption = optionResult.option;
-            pdfOption.click();
+
+            // Wait a moment for dropdown to be fully ready
+            await new Promise(r => setTimeout(r, 200));
+
+            await clickElement(pdfOption);
             console.log('[AutoPrinter] Clicked PDF option');
 
             resolve({ success: true });
