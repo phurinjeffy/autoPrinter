@@ -2,14 +2,21 @@
 const shippingSection = document.getElementById('shipping-section');
 const shippingButtons = document.getElementById('shipping-buttons');
 const shippingStatus = document.getElementById('shipping-status');
+const allCarriersContainer = document.getElementById('all-carriers-container');
+const allCarriersBtn = document.getElementById('all-carriers-btn');
 
 // Current tab reference
 let currentTabId = null;
+let availableMethodsList = []; // Store methods for "Process All" feature
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     currentTabId = tab.id;
+
+    // Set up "Process All" button
+    allCarriersBtn.addEventListener('click', handleProcessAllClick);
+
     await loadShippingMethods();
 });
 
@@ -73,6 +80,16 @@ async function loadShippingMethods() {
         if (availableMethods.length === 0) {
             shippingButtons.innerHTML = '<div class="no-orders-message">No orders ready to ship</div>';
             return;
+        }
+
+        // Store for "Process All" feature
+        availableMethodsList = availableMethods;
+
+        // Show "Process All" button if there are 2+ carriers
+        if (availableMethods.length >= 2) {
+            allCarriersContainer.classList.remove('hidden');
+            const totalOrders = availableMethods.reduce((sum, m) => sum + m.count, 0);
+            allCarriersBtn.innerHTML = `🚀 Process All Carriers <span class="order-count">${totalOrders} orders</span>`;
         }
 
         // Create buttons for each shipping method
@@ -155,3 +172,128 @@ async function handleShippingClick(method, button) {
         shippingStatus.textContent = `Error: ${error.message}`;
     }
 }
+
+// Handle "Process All Carriers" button click
+async function handleProcessAllClick() {
+    if (allCarriersBtn.classList.contains('loading')) return;
+    if (availableMethodsList.length === 0) return;
+
+    allCarriersBtn.classList.add('loading');
+    allCarriersBtn.innerHTML = '⏳ Starting batch process...';
+
+    try {
+        // Store the queue in chrome.storage for coordination with print page
+        await chrome.storage.local.set({
+            autoPrintQueue: availableMethodsList,
+            currentQueueIndex: 0,
+            originalTabId: currentTabId,
+            isQueueRunning: true
+        });
+
+        // Start processing first carrier
+        shippingStatus.className = 'shipping-status';
+        shippingStatus.textContent = `Processing 1/${availableMethodsList.length}: ${availableMethodsList[0].name}...`;
+
+        // Process first carrier - the rest will be handled by background script
+        await processCarrierFromQueue(0);
+
+    } catch (error) {
+        console.error('Error starting batch process:', error);
+        allCarriersBtn.classList.remove('loading');
+        allCarriersBtn.innerHTML = '🚀 Process All Carriers';
+        shippingStatus.className = 'shipping-status error';
+        shippingStatus.textContent = `Error: ${error.message}`;
+
+        // Clear queue on error
+        await chrome.storage.local.remove(['autoPrintQueue', 'currentQueueIndex', 'originalTabId', 'isQueueRunning']);
+    }
+}
+
+// Process a carrier from the queue by index
+async function processCarrierFromQueue(index) {
+    const data = await chrome.storage.local.get(['autoPrintQueue', 'isQueueRunning']);
+    const queue = data.autoPrintQueue || [];
+
+    if (!data.isQueueRunning || index >= queue.length) {
+        // Queue finished or stopped
+        allCarriersBtn.classList.remove('loading');
+        allCarriersBtn.innerHTML = '✓ All Done!';
+        shippingStatus.className = 'shipping-status success';
+        shippingStatus.textContent = `✓ Processed all ${queue.length} carriers!`;
+
+        // Collapse any open popup before finishing
+        try {
+            await chrome.tabs.sendMessage(currentTabId, { action: 'collapseGeneratePopup' });
+        } catch (e) { /* ignore */ }
+
+        await chrome.storage.local.remove(['autoPrintQueue', 'currentQueueIndex', 'originalTabId', 'isQueueRunning']);
+
+        setTimeout(() => {
+            allCarriersBtn.innerHTML = '🚀 Process All Carriers';
+        }, 3000);
+        return;
+    }
+
+    const method = queue[index];
+    shippingStatus.textContent = `Processing ${index + 1}/${queue.length}: ${method.name}...`;
+
+    // Step 0: Collapse any open generate popup from previous carrier
+    if (index > 0) {
+        console.log('[Popup] Collapsing previous generate popup...');
+        await chrome.tabs.sendMessage(currentTabId, { action: 'collapseGeneratePopup' });
+        // Wait a moment for UI to update
+        await new Promise(r => setTimeout(r, 500));
+    }
+
+    // Step 1: Select shipping and orders
+    const result = await chrome.tabs.sendMessage(currentTabId, {
+        action: 'selectShippingAndOrders',
+        shippingValue: method.value
+    });
+
+    if (!result?.success) {
+        throw new Error(result?.error || 'Failed to select orders');
+    }
+
+    shippingStatus.textContent = `${index + 1}/${queue.length}: Selected ${result.selectedCount} orders, arranging pickup...`;
+
+    // Step 2: Click arrange pickup button
+    const pickupResult = await chrome.tabs.sendMessage(currentTabId, {
+        action: 'arrangePickup'
+    });
+
+    if (!pickupResult?.success) {
+        throw new Error(pickupResult?.error || 'Failed to arrange pickup');
+    }
+
+    shippingStatus.textContent = `${index + 1}/${queue.length}: Arranged pickup, generating labels...`;
+
+    // Update queue index before opening print page
+    await chrome.storage.local.set({ currentQueueIndex: index });
+
+    // Step 3: Generate label (this opens print page in new tab)
+    const generateResult = await chrome.tabs.sendMessage(currentTabId, {
+        action: 'generateLabel'
+    });
+
+    if (!generateResult?.success) {
+        throw new Error(generateResult?.error || 'Failed to generate label');
+    }
+
+    shippingStatus.textContent = `${index + 1}/${queue.length}: Print page opened. Print, then it will continue automatically.`;
+    allCarriersBtn.innerHTML = `⏳ ${index + 1}/${queue.length} - Waiting for print...`;
+}
+
+// Listen for messages from background script to continue queue
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'continueQueue') {
+        console.log('[Popup] Received continueQueue message, processing index:', request.nextIndex);
+        processCarrierFromQueue(request.nextIndex).catch(error => {
+            console.error('Error continuing queue:', error);
+            shippingStatus.className = 'shipping-status error';
+            shippingStatus.textContent = `Error: ${error.message}`;
+        });
+        sendResponse({ received: true });
+    }
+    return true;
+});

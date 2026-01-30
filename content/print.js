@@ -1,8 +1,11 @@
 // Content script for Shopee Print page
 // Auto-clicks the print button when the page loads
+// Also handles auto-close after printing for batch mode
 
 (function () {
     console.log('[AutoPrinter] Print page script loaded');
+
+    let printButtonClicked = false;
 
     // Function to check if button is ready (not disabled, not loading)
     function isButtonReady(button) {
@@ -26,6 +29,11 @@
         if (printButton && isButtonReady(printButton)) {
             console.log('[AutoPrinter] Found print button and it is ready, clicking...');
             printButton.click();
+            printButtonClicked = true;
+
+            // Notify background script that print was triggered
+            chrome.runtime.sendMessage({ action: 'printCompleted' });
+
             return true;
         }
 
@@ -35,6 +43,25 @@
 
         return false;
     }
+
+    // Handle after print - check if we're in batch mode and should auto-close
+    window.onafterprint = async function () {
+        console.log('[AutoPrinter] Print dialog closed');
+
+        try {
+            const data = await chrome.storage.local.get(['isQueueRunning']);
+
+            if (data.isQueueRunning) {
+                console.log('[AutoPrinter] Batch mode active, auto-closing tab in 1 second...');
+                // Wait a moment then close the tab
+                setTimeout(() => {
+                    window.close();
+                }, 1000);
+            }
+        } catch (error) {
+            console.log('[AutoPrinter] Error checking queue status:', error);
+        }
+    };
 
     // Wait for initial page load
     const initialDelay = 2000; // Wait 2 seconds for page to start loading

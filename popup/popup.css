@@ -152,6 +152,51 @@ body {
   font-size: 13px;
 }
 
+/* All Carriers Button */
+.all-carriers-container {
+  margin-bottom: 12px;
+}
+
+.all-carriers-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #ee4d2d 0%, #ff6633 100%);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 15px;
+  font-weight: 600;
+  color: white;
+}
+
+.all-carriers-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(238, 77, 45, 0.4);
+}
+
+.all-carriers-btn:active {
+  transform: translateY(0);
+}
+
+.all-carriers-btn .order-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.all-carriers-btn.loading {
+  opacity: 0.85;
+  cursor: wait;
+}
+
 /* Footer */
 .footer {
   padding: 12px;

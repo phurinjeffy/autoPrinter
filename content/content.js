@@ -29,8 +29,41 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             .catch(err => sendResponse({ success: false, error: err.message }));
         return true; // Keep channel open for async response
     }
+    else if (request.action === 'collapseGeneratePopup') {
+        collapseGeneratePopup()
+            .then(result => sendResponse(result))
+            .catch(err => sendResponse({ success: false, error: err.message }));
+        return true; // Keep channel open for async response
+    }
     return true;
 });
+
+// Collapse the generate label popup/panel
+function collapseGeneratePopup() {
+    return new Promise((resolve) => {
+        try {
+            // Find the collapse button - it contains "ย่อ" text
+            const collapseButton = document.querySelector('.collapse');
+            
+            if (collapseButton) {
+                console.log('[AutoPrinter] Found collapse button, clicking...');
+                collapseButton.click();
+                
+                // Wait a moment for the popup to close
+                setTimeout(() => {
+                    resolve({ success: true });
+                }, 500);
+            } else {
+                // No popup open, that's fine
+                console.log('[AutoPrinter] No collapse button found, popup may already be closed');
+                resolve({ success: true });
+            }
+        } catch (err) {
+            console.error('[AutoPrinter] Error collapsing popup:', err);
+            resolve({ success: false, error: err.message });
+        }
+    });
+}
 
 // Get all shipping methods from the page
 function getShippingMethods() {
