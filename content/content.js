@@ -503,25 +503,34 @@ function waitForLabelsToLoad(maxWaitMs = 120000) {
         const checkLoading = () => {
             const elapsed = Date.now() - startTime;
 
-            // Find all status columns in the order table
-            const statusCols = document.querySelectorAll('.status-col');
+            // Find all status indicators with data-testid (actual order statuses, not headers)
+            // These have data-testid like "OFG223431714237065-success" or similar
+            const successStatuses = document.querySelectorAll('.status-col [data-testid$="-success"]');
+            const allStatusDivs = document.querySelectorAll('.status-col [data-testid]');
 
-            let totalOrders = statusCols.length;
-            let successCount = 0;
-            let loadingCount = 0;
+            // Alternative: count by looking for success icons vs loading/pending icons
+            const successIcons = document.querySelectorAll('.status-col .icon.success');
+            const loadingIcons = document.querySelectorAll('.status-col .icon:not(.success)');
 
-            statusCols.forEach(col => {
-                // Check for success status - has "สำเร็จ" text or success class/data-testid
-                const hasSuccess = col.querySelector('[data-testid$="-success"]') ||
-                    col.querySelector('.icon.success') ||
-                    col.innerText.includes('สำเร็จ');
+            // Use whichever method finds orders
+            let successCount = successStatuses.length || successIcons.length;
+            let totalOrders = allStatusDivs.length || (successIcons.length + loadingIcons.length);
+            let loadingCount = totalOrders - successCount;
 
-                if (hasSuccess) {
-                    successCount++;
-                } else {
-                    loadingCount++;
-                }
-            });
+            // If we can't find status indicators, fall back to checking text
+            if (totalOrders === 0) {
+                const statusCols = document.querySelectorAll('.status-col');
+                statusCols.forEach(col => {
+                    // Only count columns that have actual content (not empty headers)
+                    if (col.innerText.trim().length > 0) {
+                        totalOrders++;
+                        if (col.innerText.includes('สำเร็จ')) {
+                            successCount++;
+                        }
+                    }
+                });
+                loadingCount = totalOrders - successCount;
+            }
 
             console.log(`[AutoPrinter] Label status: ${successCount}/${totalOrders} loaded (${loadingCount} still loading, ${elapsed}ms elapsed)`);
 
