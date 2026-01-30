@@ -528,87 +528,135 @@ function generateLabel() {
             const generateButton = buttonResult.button;
             console.log('[AutoPrinter] Found generate button, triggering hover...');
 
-            // Try hover multiple times with delays
-            let pdfOption = null;
-            for (let i = 0; i < 5; i++) {
+            // Keep triggering hover while we look for and click the option
+            const hoverInterval = setInterval(() => {
                 triggerHover(generateButton);
+            }, 100);
+
+            try {
+                // Try hover multiple times with delays
+                let pdfOption = null;
+                for (let i = 0; i < 10; i++) {
+                    triggerHover(generateButton);
+                    await new Promise(r => setTimeout(r, 200));
+
+                    // Check if dropdown appeared
+                    pdfOption = document.querySelector('[data-testid="doc-type-NORMAL_PDF"]');
+                    if (pdfOption) {
+                        console.log('[AutoPrinter] Dropdown appeared on attempt', i + 1);
+                        break;
+                    }
+                }
+
+                if (!pdfOption) {
+                    // Try clicking the generate button to open dropdown
+                    console.log('[AutoPrinter] Hover failed, trying click on generate button...');
+                    generateButton.click();
+                    await new Promise(r => setTimeout(r, 500));
+                    pdfOption = document.querySelector('[data-testid="doc-type-NORMAL_PDF"]');
+                }
+
+                if (!pdfOption) {
+                    clearInterval(hoverInterval);
+                    resolve({ success: false, error: 'PDF option not found' });
+                    return;
+                }
+
+                // Try multiple click methods
+                console.log('[AutoPrinter] Found PDF option, trying to click...');
+
+                // Method 1: Direct click
+                console.log('[AutoPrinter] Method 1: Direct click');
+                pdfOption.click();
                 await new Promise(r => setTimeout(r, 300));
 
-                // Check if dropdown appeared
-                pdfOption = document.querySelector('[data-testid="doc-type-NORMAL_PDF"]');
-                if (pdfOption) {
-                    console.log('[AutoPrinter] Dropdown appeared on attempt', i + 1);
-                    break;
-                }
-            }
-
-            // If dropdown appeared via hover, click immediately (like before)
-            if (pdfOption) {
-                console.log('[AutoPrinter] Clicking PDF option immediately...');
-                pdfOption.click();
-
-                // Wait and check
-                await new Promise(r => setTimeout(r, 500));
-                const stillVisible = document.querySelector('[data-testid="doc-type-NORMAL_PDF"]');
-                if (!stillVisible) {
-                    console.log('[AutoPrinter] Click successful, dropdown closed');
+                if (!document.querySelector('[data-testid="doc-type-NORMAL_PDF"]')) {
+                    console.log('[AutoPrinter] Method 1 worked!');
+                    clearInterval(hoverInterval);
                     resolve({ success: true });
                     return;
                 }
-            }
 
-            // Fallback: Wait for dropdown and try different click methods
-            const optionResult = await waitForPdfOption();
+                // Method 2: Find and click the parent or container
+                console.log('[AutoPrinter] Method 2: Click parent elements');
+                let parent = pdfOption.parentElement;
+                for (let i = 0; i < 3 && parent; i++) {
+                    parent.click();
+                    await new Promise(r => setTimeout(r, 200));
+                    if (!document.querySelector('[data-testid="doc-type-NORMAL_PDF"]')) {
+                        console.log('[AutoPrinter] Parent click worked!');
+                        clearInterval(hoverInterval);
+                        resolve({ success: true });
+                        return;
+                    }
+                    parent = parent.parentElement;
+                }
 
-            if (!optionResult.ready) {
-                // If still not found, try clicking the button instead (might be a click dropdown)
-                console.log('[AutoPrinter] Trying click instead of hover...');
-                generateButton.click();
-                await new Promise(r => setTimeout(r, 500));
+                // Method 3: Dispatch a trusted-like event
+                console.log('[AutoPrinter] Method 3: Dispatch event on PDF option');
+                const clickEvent = new MouseEvent('click', {
+                    view: window,
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: pdfOption.getBoundingClientRect().left + 10,
+                    clientY: pdfOption.getBoundingClientRect().top + 10
+                });
+                pdfOption.dispatchEvent(clickEvent);
+                await new Promise(r => setTimeout(r, 300));
 
-                const retryResult = await waitForPdfOption();
-                if (!retryResult.ready) {
-                    resolve({ success: false, error: retryResult.error });
+                if (!document.querySelector('[data-testid="doc-type-NORMAL_PDF"]')) {
+                    console.log('[AutoPrinter] Method 3 worked!');
+                    clearInterval(hoverInterval);
+                    resolve({ success: true });
                     return;
                 }
 
-                retryResult.option.click();
-                console.log('[AutoPrinter] Clicked PDF option (after click trigger)');
+                // Method 4: Try mousedown + mouseup sequence
+                console.log('[AutoPrinter] Method 4: mousedown + mouseup sequence');
+                pdfOption.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                await new Promise(r => setTimeout(r, 50));
+                pdfOption.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+                await new Promise(r => setTimeout(r, 50));
+                pdfOption.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                await new Promise(r => setTimeout(r, 300));
+
+                if (!document.querySelector('[data-testid="doc-type-NORMAL_PDF"]')) {
+                    console.log('[AutoPrinter] Method 4 worked!');
+                    clearInterval(hoverInterval);
+                    resolve({ success: true });
+                    return;
+                }
+
+                // Method 5: Try finding a clickable child or sibling
+                console.log('[AutoPrinter] Method 5: Looking for clickable elements nearby');
+                const allOptions = document.querySelectorAll('[data-testid*="doc-type"]');
+                for (const opt of allOptions) {
+                    if (opt.textContent.includes('PDF')) {
+                        opt.click();
+                        await new Promise(r => setTimeout(r, 200));
+                    }
+                }
+
+                clearInterval(hoverInterval);
+
+                // Final check
+                await new Promise(r => setTimeout(r, 500));
+                const finalCheck = !document.querySelector('[data-testid="doc-type-NORMAL_PDF"]');
+                console.log('[AutoPrinter] Final check - dropdown closed:', finalCheck);
+
                 resolve({ success: true });
-                return;
+
+            } catch (innerErr) {
+                clearInterval(hoverInterval);
+                throw innerErr;
             }
-
-            // Try simple click first
-            console.log('[AutoPrinter] Trying simple click on PDF option...');
-            optionResult.option.click();
-
-            await new Promise(r => setTimeout(r, 500));
-
-            // Check if it worked
-            const closed = !document.querySelector('[data-testid="doc-type-NORMAL_PDF"]');
-            if (closed) {
-                console.log('[AutoPrinter] Simple click worked!');
-                resolve({ success: true });
-                return;
-            }
-
-            // If still visible, try other methods
-            console.log('[AutoPrinter] Simple click failed, trying other methods...');
-
-            const pdfEl = optionResult.option;
-            const rect = pdfEl.getBoundingClientRect();
-            const centerX = rect.left + rect.width / 2;
-            const centerY = rect.top + rect.height / 2;
-
-            // Try coordinate-based click
-            await clickAtCoordinates(centerX, centerY);
-
-            await new Promise(r => setTimeout(r, 1000));
-
-            resolve({ success: true });
 
         } catch (err) {
             resolve({ success: false, error: err.message });
+        }
+    });
+}
+resolve({ success: false, error: err.message });
         }
     });
 }
